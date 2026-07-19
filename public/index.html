@@ -8,7 +8,7 @@
 </head>
 <body>
   <div id="app">
-   <div class="stage">
+   <div class="stage" id="stage">
 
     <header class="brand-header">
       <img src="assets/tot-logo.svg" alt="Token of Trust" class="brand-logo" id="brand-logo" />
@@ -64,11 +64,10 @@
 
     <section id="screen-phone" class="screen" data-step="2">
       <h2>Enter your phone number</h2>
-      <p class="lede">We'll text you a one-time verification link.</p>
+      <p class="lede">We'll text you a one-time verification link. Type it or use the keypad.</p>
       <div class="phone-display">
         <span class="phone-prefix">+1</span>
-        <span id="phone-value" class="phone-value" data-placeholder="555 123 4567"></span>
-        <span class="cursor"></span>
+        <input id="phone-value" class="phone-value-input" type="tel" inputmode="numeric" maxlength="12" placeholder="555 123 4567" autocomplete="tel-national" />
       </div>
       <div class="field" id="field-name">
         <input id="input-name" class="field-input" type="text" autocomplete="given-name" />
@@ -102,6 +101,7 @@
       <p class="lede small" id="qr-countdown-label">Code expires in 5:00</p>
       <p class="lede">Scan with your phone camera, then come back with your code.</p>
       <p class="watching" id="qr-watching">Watching for your verification…</p>
+      <button id="btn-dev-force-clear-qr" class="link hidden">Dev: simulate verified</button>
       <button class="link btn-back" data-target="screen-welcome">Back</button>
     </section>
 
@@ -115,6 +115,8 @@
         <span class="spinner"></span>
         <span id="sent-elapsed">Watching for your verification… 0:00</span>
       </div>
+      <p class="field-error" id="sent-dev-note"></p>
+      <button id="btn-dev-force-clear-sms" class="link hidden">Dev: simulate verified</button>
       <div class="stack">
         <button id="btn-sent-done" class="secondary">Enter my code manually instead</button>
         <button id="btn-sent-idle" class="secondary">Done — let someone else use the kiosk</button>
@@ -140,9 +142,182 @@
       <div id="result-icon" class="result-icon"></div>
       <h2 id="result-title"></h2>
       <p id="result-message" class="lede"></p>
-      <button id="btn-result-done" class="primary">Done — next customer</button>
+      <div class="stack">
+        <button id="btn-result-continue" class="primary hidden">Continue to store</button>
+        <button id="btn-result-done" class="secondary">Done — next customer</button>
+      </div>
       <p class="lede small" id="result-auto-note"></p>
     </section>
+
+   </div>
+
+   <!-- Full-screen shop flow (store -> details -> review -> receipt). Lives
+        outside .stage so it can use the whole viewport in a two-pane layout
+        instead of the narrow centered card used by the verification steps. -->
+   <div id="shop-layout-wrapper" class="shop-layout hidden">
+
+    <section id="screen-store" class="screen screen-wide" data-step="4">
+      <div class="shop-main">
+        <h2>The Candy Counter</h2>
+        <p class="lede">Access granted — add items to your cart.</p>
+        <ul id="store-catalog" class="store-catalog"></ul>
+        <p class="field-error" id="store-error"></p>
+        <button class="link btn-back" data-target="screen-welcome">Cancel</button>
+      </div>
+    </section>
+
+    <section id="screen-checkout-details" class="screen screen-wide" data-step="4">
+      <div class="shop-main">
+        <h2>Your details</h2>
+        <p class="lede">We'll need a few details to complete your order.</p>
+
+        <p class="form-section-label">Name</p>
+        <div class="form-row">
+          <div class="field" id="cd-first-name-field">
+            <input id="cd-first-name" class="field-input" type="text" autocomplete="given-name" />
+            <label class="field-label" for="cd-first-name">First name</label>
+            <p class="field-error" id="cd-first-name-error"></p>
+          </div>
+          <div class="field" id="cd-middle-name-field">
+            <input id="cd-middle-name" class="field-input" type="text" autocomplete="additional-name" />
+            <label class="field-label" for="cd-middle-name">Middle name</label>
+            <p class="field-error" id="cd-middle-name-error"></p>
+          </div>
+          <div class="field" id="cd-last-name-field">
+            <input id="cd-last-name" class="field-input" type="text" autocomplete="family-name" />
+            <label class="field-label" for="cd-last-name">Last name</label>
+            <p class="field-error" id="cd-last-name-error"></p>
+          </div>
+        </div>
+
+        <div class="field" id="cd-email-field">
+          <input id="cd-email" class="field-input" type="email" autocomplete="email" />
+          <label class="field-label" for="cd-email">Email</label>
+          <p class="field-error" id="cd-email-error"></p>
+        </div>
+
+        <div class="field" id="cd-phone-field">
+          <input id="cd-phone" class="field-input" type="tel" autocomplete="tel" />
+          <label class="field-label" for="cd-phone">Phone number</label>
+          <p class="field-error" id="cd-phone-error"></p>
+        </div>
+
+        <p class="form-section-label">Address</p>
+        <div class="form-row">
+          <div class="field" id="cd-house-number-field">
+            <input id="cd-house-number" class="field-input" type="text" autocomplete="address-line1" />
+            <label class="field-label" for="cd-house-number">House / building no.</label>
+            <p class="field-error" id="cd-house-number-error"></p>
+          </div>
+          <div class="field" id="cd-street-field">
+            <input id="cd-street" class="field-input" type="text" autocomplete="address-line1" />
+            <label class="field-label" for="cd-street">Street</label>
+            <p class="field-error" id="cd-street-error"></p>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field" id="cd-town-field">
+            <input id="cd-town" class="field-input" type="text" autocomplete="address-level2" />
+            <label class="field-label" for="cd-town">Town / city</label>
+            <p class="field-error" id="cd-town-error"></p>
+          </div>
+          <div class="field" id="cd-state-field">
+            <input id="cd-state" class="field-input" type="text" autocomplete="address-level1" />
+            <label class="field-label" for="cd-state">State</label>
+            <p class="field-error" id="cd-state-error"></p>
+          </div>
+          <div class="field" id="cd-zip-field">
+            <input id="cd-zip" class="field-input" type="text" autocomplete="postal-code" />
+            <label class="field-label" for="cd-zip">ZIP code</label>
+            <p class="field-error" id="cd-zip-error"></p>
+          </div>
+        </div>
+
+        <p class="form-section-label">Promo code</p>
+        <div class="promo-row">
+          <div class="field" id="cd-promo-field">
+            <input id="cd-promo" class="field-input promo-input" type="text" autocomplete="off" />
+            <label class="field-label" for="cd-promo">Optional code</label>
+          </div>
+          <button type="button" id="btn-apply-promo" class="secondary">Apply</button>
+        </div>
+        <p class="field-error" id="cd-promo-error"></p>
+        <p class="promo-status" id="cd-promo-status"></p>
+
+        <div class="payment-methods">
+          <p class="lede small payment-methods-label">Mode of payment</p>
+          <label class="payment-option">
+            <input type="radio" name="cd-payment" value="card" checked />
+            Credit / Debit Card
+          </label>
+          <label class="payment-option">
+            <input type="radio" name="cd-payment" value="cash" />
+            Cash on Delivery
+          </label>
+        </div>
+
+        <div id="cd-card-details" class="card-details">
+          <div class="field" id="cd-card-number-field">
+            <input id="cd-card-number" class="field-input" type="text" inputmode="numeric" maxlength="19" autocomplete="cc-number" />
+            <label class="field-label" for="cd-card-number">Card number</label>
+            <p class="field-error" id="cd-card-number-error"></p>
+          </div>
+          <div class="form-row">
+            <div class="field" id="cd-card-expiry-field">
+              <input id="cd-card-expiry" class="field-input" type="text" maxlength="5" autocomplete="cc-exp" />
+              <label class="field-label" for="cd-card-expiry">Expiry (MM/YY)</label>
+              <p class="field-error" id="cd-card-expiry-error"></p>
+            </div>
+            <div class="field" id="cd-card-cvv-field">
+              <input id="cd-card-cvv" class="field-input" type="password" inputmode="numeric" maxlength="4" autocomplete="cc-csc" />
+              <label class="field-label" for="cd-card-cvv">CVV</label>
+              <p class="field-error" id="cd-card-cvv-error"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <button id="btn-checkout-details-continue" class="primary">Continue to review</button>
+          <button class="link btn-back" data-target="screen-store">Back to store</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-checkout" class="screen screen-wide" data-step="4">
+      <div class="shop-main">
+        <h2>Checkout</h2>
+        <p class="lede">Confirm your order.</p>
+        <div class="checkout-details-summary" id="checkout-details-summary"></div>
+        <p class="field-error" id="checkout-error"></p>
+        <div class="stack">
+          <button id="btn-checkout-confirm" class="primary">Confirm purchase</button>
+          <button class="link btn-back" data-target="screen-checkout-details">Back</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-purchase-done" class="screen screen-wide" data-step="4">
+      <div class="shop-main">
+        <div class="result-icon good">
+          <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+        </div>
+        <h2>Purchase complete</h2>
+        <p class="lede small" id="purchase-receipt-customer"></p>
+        <button id="btn-purchase-done" class="primary">Done — next customer</button>
+      </div>
+    </section>
+
+    <aside id="shop-order-panel" class="shop-order">
+      <h3 id="shop-order-title">Your Order</h3>
+      <ul id="shop-order-lines" class="store-catalog"></ul>
+      <p class="lede" id="shop-order-subtotal"></p>
+      <p class="lede" id="shop-order-discount"></p>
+      <p class="lede shop-order-grand-total" id="shop-order-total"></p>
+      <p class="lede small hidden" id="shop-order-receipt-id"></p>
+      <div class="shop-order-footer" id="shop-order-footer">
+        <button id="btn-store-checkout" class="primary" disabled>Checkout</button>
+      </div>
+    </aside>
 
    </div>
 

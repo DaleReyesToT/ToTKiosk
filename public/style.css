@@ -357,21 +357,25 @@ button.small {
   color: var(--text-muted);
 }
 
-.phone-value:empty::before {
-  content: attr(data-placeholder);
+.phone-value-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: 'Lato', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  min-width: 0;
+}
+
+.phone-value-input:focus {
+  outline: none;
+}
+
+.phone-value-input::placeholder {
   color: var(--text-muted);
   font-weight: 400;
-}
-
-.cursor {
-  width: 2px;
-  height: 1.4rem;
-  background: var(--teal);
-  animation: blink 1s step-start infinite;
-}
-
-@keyframes blink {
-  50% { opacity: 0; }
 }
 
 /* On-screen keypad */
@@ -639,6 +643,293 @@ button.small {
 
 .error {
   color: var(--error);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Storefront (gated behind a cleared verification) */
+.store-catalog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.store-catalog li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  text-align: left;
+}
+
+.store-catalog li button {
+  padding: 8px 14px;
+  font-size: 0.9rem;
+}
+
+.product-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.product-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex-grow: 1;
+  gap: 2px;
+}
+
+.product-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.product-price {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.qty-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.qty-btn:active {
+  background: var(--mint);
+}
+
+.qty-value {
+  min-width: 1.4em;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Checkout details form */
+.payment-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.payment-methods-label {
+  margin: 4px 0 0;
+}
+
+.payment-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.payment-option:has(input:checked) {
+  border-color: var(--active-green);
+  background: var(--mint);
+}
+
+.payment-option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+  flex-shrink: 0;
+}
+
+.checkout-details-summary {
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.checkout-details-summary strong {
+  color: var(--text);
+}
+
+/* Multi-field rows (name parts, address parts) in the checkout details form */
+.form-section-label {
+  text-align: left;
+  font-weight: 700;
+  color: var(--text);
+  margin: 8px 0 -8px;
+  font-size: 0.9rem;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-row .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.promo-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.promo-row .field {
+  flex: 1;
+}
+
+.promo-row button {
+  padding: 12px 18px;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.promo-status {
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--active-green);
+  font-weight: 700;
+  min-height: 1.1em;
+  margin: -4px 0 0;
+}
+
+/* Card sub-form, shown only when "Credit / Debit Card" is selected */
+.card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px 16px 12px;
+}
+
+.card-details.hidden {
+  display: none;
+}
+
+/* ---------- Full-screen shop flow (store / details / review / receipt) ---------- */
+.shop-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+  max-width: 1200px;
+  margin: 24px auto;
+  padding: 0 20px;
+}
+
+.shop-layout.hidden {
+  display: none;
+}
+
+.screen-wide {
+  grid-column: 1;
+  text-align: left;
+  margin: 0;
+}
+
+.screen-wide.active {
+  display: block;
+}
+
+.shop-main {
+  background: var(--surface);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 24px 60px -24px rgba(4, 74, 56, 0.28), 0 0 0 1px var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shop-order {
+  grid-column: 2;
+  grid-row: 1;
+  position: sticky;
+  top: 24px;
+  background: var(--surface);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 24px 60px -24px rgba(4, 74, 56, 0.28), 0 0 0 1px var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  min-height: 200px;
+}
+
+.shop-order h3 {
+  margin: 0 0 4px;
+  font-family: 'Lato', sans-serif;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+.shop-order-grand-total {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+/* Pins the Checkout action to the lower-right of the screen — the aside is
+   already the right-hand column, so bottom-of-column is lower-right. */
+.shop-order-footer {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.shop-order-footer button {
+  width: 100%;
+}
+
+/* Below ~860px there isn't room for two 1200px-designed columns side by side
+   — stack the order summary under the main content instead of squeezing it. */
+@media (max-width: 860px) {
+  .shop-layout {
+    grid-template-columns: 1fr;
+  }
+  .shop-order {
+    grid-column: 1;
+    grid-row: 2;
+    position: static;
+  }
 }
 
 #staff-pin-modal {

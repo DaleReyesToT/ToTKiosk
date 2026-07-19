@@ -5,6 +5,11 @@ document.getElementById('brand-logo').addEventListener('error', () => {
   document.querySelector('.brand-header').classList.add('is-empty');
 });
 
+// The shop flow (store -> details -> review -> receipt) renders full-width
+// outside .stage, in a two-pane layout with a persistent order-summary panel
+// on the right — everything else stays in the narrow centered card.
+const WIDE_SCREENS = new Set(['screen-store', 'screen-checkout-details', 'screen-checkout', 'screen-purchase-done']);
+
 function show(id) {
   screens.forEach((s) => s.classList.toggle('active', s.id === id));
   const active = document.getElementById(id);
@@ -14,10 +19,24 @@ function show(id) {
     d.classList.toggle('active', n === step);
     d.classList.toggle('done', n < step);
   });
+
+  const isWide = WIDE_SCREENS.has(id);
+  document.getElementById('stage').classList.toggle('hidden', isWide);
+  document.getElementById('shop-layout-wrapper').classList.toggle('hidden', !isWide);
+  if (isWide) enterShopScreen(id);
+
   stopIdleTimer();
   if (id !== 'screen-welcome' && id !== 'screen-result') startIdleTimer();
-  if (id === 'screen-welcome') startLiveCounter();
-  else stopLiveCounter();
+  if (id === 'screen-welcome') {
+    startLiveCounter();
+    // Shared-device privacy: never leave one customer's name/email/phone/
+    // address/card details sitting in the form for the next person to see.
+    resetCheckoutDetailsForm();
+    cart = {};
+    appliedPromo = null;
+  } else {
+    stopLiveCounter();
+  }
 }
 
 document.querySelectorAll('.btn-back').forEach((b) => {
@@ -139,9 +158,12 @@ async function refreshLiveCounter() {
 // underneath is the guaranteed fallback if that connection never fires.
 let pollHandle = null;
 let pollEventSource = null;
+let currentPollingTransactionId = null;
 
 function startPolling(transactionId, { onElapsed } = {}) {
   stopPolling();
+  currentPollingTransactionId = transactionId;
+  setDevForceClearVisible(true);
   const startedAt = Date.now();
   let settled = false;
 
@@ -149,7 +171,7 @@ function startPolling(transactionId, { onElapsed } = {}) {
     if (settled) return;
     settled = true;
     stopPolling();
-    showResult(status);
+    showResult(status, transactionId);
   };
 
   const es = new EventSource(`/api/kiosk/events?transactionId=${encodeURIComponent(transactionId)}`);
@@ -185,7 +207,51 @@ function stopPolling() {
     pollEventSource.close();
     pollEventSource = null;
   }
+  currentPollingTransactionId = null;
+  setDevForceClearVisible(false);
 }
+
+// ---------- DEV-ONLY: simulate a verification without a real one ----------
+// Only ever visible when the server was explicitly started with
+// DEV_ALLOW_MOCK_VERIFICATION=true — hidden otherwise, including in any real
+// deployment. Lets the store/purchase gate be exercised when the hosted
+// verification flow itself can't be completed.
+//
+// The button is also tied to an *active* transaction, not just "dev mode is
+// on": startPolling() only sets currentPollingTransactionId after the invite
+// call resolves, but the waiting screen itself is shown synchronously right
+// before that call — so showing the button any earlier lets it be clicked
+// during that gap, when there's nothing yet to mark cleared, and silently
+// no-op. Gating visibility on startPolling/stopPolling instead of on load
+// keeps it clickable only when it can actually do something.
+let devModeEnabled = false;
+
+function setDevForceClearVisible(visible) {
+  const show = visible && devModeEnabled;
+  document.getElementById('btn-dev-force-clear-qr').classList.toggle('hidden', !show);
+  document.getElementById('btn-dev-force-clear-sms').classList.toggle('hidden', !show);
+}
+
+async function forceClearDev() {
+  if (!currentPollingTransactionId) return;
+  try {
+    await fetch('/api/kiosk/dev/force-clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transactionId: currentPollingTransactionId }),
+    });
+  } catch {
+    // The active poll/SSE will just keep waiting — nothing else to do here.
+  }
+}
+
+document.getElementById('btn-dev-force-clear-qr').addEventListener('click', forceClearDev);
+document.getElementById('btn-dev-force-clear-sms').addEventListener('click', forceClearDev);
+
+fetch('/api/kiosk/dev/config')
+  .then((res) => res.json())
+  .then((data) => { devModeEnabled = !!data.mockVerificationEnabled; })
+  .catch(() => {});
 
 // ---------- Welcome screen ----------
 document.getElementById('btn-start-sms').addEventListener('click', () => show('screen-phone'));
@@ -234,7 +300,7 @@ function formatPhoneDisplay(digits) {
 }
 
 function renderPhone() {
-  phoneValueEl.textContent = formatPhoneDisplay(phoneDigits);
+  phoneValueEl.value = formatPhoneDisplay(phoneDigits);
   sendSmsBtn.disabled = phoneDigits.length !== 10;
 }
 
@@ -245,6 +311,13 @@ document.getElementById('keypad-phone').addEventListener('click', (e) => {
   if (key === 'clear') phoneDigits = '';
   else if (key === 'back') phoneDigits = phoneDigits.slice(0, -1);
   else if (phoneDigits.length < 10) phoneDigits += key;
+  renderPhone();
+});
+
+// Typing on a physical keyboard works too, not just tapping the on-screen
+// keypad — the input just re-derives phoneDigits from whatever was typed.
+phoneValueEl.addEventListener('input', () => {
+  phoneDigits = phoneValueEl.value.replace(/\D/g, '').slice(0, 10);
   renderPhone();
 });
 
@@ -266,6 +339,9 @@ document.getElementById('btn-send-sms').addEventListener('click', async () => {
     if (!res.ok) throw new Error(data.error || 'Failed to send invite');
 
     show('screen-sent');
+    document.getElementById('sent-dev-note').textContent = data.devSmsDeliveryFailed
+      ? 'Dev: real SMS delivery failed — use the simulate button below.'
+      : '';
     const elapsedEl = document.getElementById('sent-elapsed');
     startPolling(data.appTransactionId, {
       onElapsed: (secs) => {
@@ -378,7 +454,7 @@ document.getElementById('btn-check-code').addEventListener('click', async () => 
   try {
     const res = await fetch(`/api/kiosk/status?code=${encodeURIComponent(code)}`);
     const data = await res.json();
-    showResult(res.ok ? data.status : 'error');
+    showResult(res.ok ? data.status : 'error', res.ok ? data.transactionId : null);
   } catch {
     showResult('error');
   } finally {
@@ -406,9 +482,11 @@ const RESULT_COPY = {
 };
 
 let resultAutoResetTimer = null;
+let lastTransactionId = null;
 
-function showResult(status) {
+function showResult(status, transactionId) {
   stopPolling();
+  lastTransactionId = transactionId || null;
   const [title, message, cls, iconCls, icon] = RESULT_COPY[status] || RESULT_COPY.error;
   const titleEl = document.getElementById('result-title');
   titleEl.textContent = title;
@@ -419,10 +497,16 @@ function showResult(status) {
   iconEl.innerHTML = icon;
   iconEl.className = `result-icon ${iconCls}`;
 
+  // Only a genuinely cleared status (re-checked live, server-side, when the
+  // store is actually opened) unlocks the storefront — this button is just
+  // navigation, not the gate itself.
+  const canContinue = status === 'cleared' && !!lastTransactionId;
+  document.getElementById('btn-result-continue').classList.toggle('hidden', !canContinue);
+
   show('screen-result');
 
   const noteEl = document.getElementById('result-auto-note');
-  let secs = 8;
+  let secs = canContinue ? 20 : 8;
   if (resultAutoResetTimer) clearInterval(resultAutoResetTimer);
   const tick = () => {
     noteEl.textContent = `Returning to start in ${secs}s…`;
@@ -441,6 +525,372 @@ document.getElementById('btn-result-done').addEventListener('click', () => {
   if (resultAutoResetTimer) clearInterval(resultAutoResetTimer);
   show('screen-welcome');
 });
+
+document.getElementById('btn-result-continue').addEventListener('click', () => {
+  if (resultAutoResetTimer) clearInterval(resultAutoResetTimer);
+  openStore(lastTransactionId);
+});
+
+// ---------- Storefront (gated on a live, server-verified "cleared" status) ----------
+// The cart only ever holds itemId -> quantity. Prices/totals shown here are a
+// preview computed from the catalog the server just handed back, and the
+// promo discount previewed here is likewise just UI — the server re-validates
+// the code and recomputes the authoritative subtotal/discount/total from its
+// own data at purchase time, it never trusts a client-supplied amount.
+let cart = {};
+let catalogById = {};
+let storeTransactionId = null;
+let appliedPromo = null; // { code, discountPercent } | null
+
+function parsePrice(priceStr) {
+  return parseFloat(String(priceStr || '0').replace(/[^0-9.]/g, '')) || 0;
+}
+
+function formatPrice(amount) {
+  return `$${amount.toFixed(2)}`;
+}
+
+function cartSubtotal() {
+  return Object.entries(cart).reduce((sum, [id, qty]) => sum + parsePrice(catalogById[id]?.price) * qty, 0);
+}
+
+// The shared right-hand order panel is one persistent element reused across
+// all four shop screens (store/details/review/receipt) instead of duplicating
+// the same markup+logic four times — enterShopScreen() below just adjusts
+// its title/footer/visibility per screen.
+function renderOrderSummary() {
+  const lines = document.getElementById('shop-order-lines');
+  const entries = Object.entries(cart);
+  lines.innerHTML = entries.length
+    ? entries
+        .map(([id, qty]) => {
+          const item = catalogById[id];
+          const lineTotal = parsePrice(item.price) * qty;
+          return `<li><span>${item.emoji || ''} ${item.name} × ${qty}</span><span>${formatPrice(lineTotal)}</span></li>`;
+        })
+        .join('')
+    : '<li>Your cart is empty.</li>';
+
+  const subtotal = cartSubtotal();
+  const discountPercent = appliedPromo?.discountPercent || 0;
+  const discountAmount = subtotal * (discountPercent / 100);
+  const total = subtotal - discountAmount;
+
+  document.getElementById('shop-order-subtotal').textContent = entries.length ? `Subtotal: ${formatPrice(subtotal)}` : '';
+  document.getElementById('shop-order-discount').textContent = discountPercent
+    ? `Promo ${appliedPromo.code} (-${discountPercent}%): -${formatPrice(discountAmount)}`
+    : '';
+  document.getElementById('shop-order-total').textContent = entries.length ? `Total: ${formatPrice(total)}` : '';
+
+  const count = entries.reduce((sum, [, qty]) => sum + qty, 0);
+  const checkoutBtn = document.getElementById('btn-store-checkout');
+  if (checkoutBtn) checkoutBtn.disabled = count === 0;
+}
+
+function enterShopScreen(id) {
+  const footer = document.getElementById('shop-order-footer');
+  const title = document.getElementById('shop-order-title');
+  const receiptIdEl = document.getElementById('shop-order-receipt-id');
+
+  footer.classList.toggle('hidden', id !== 'screen-store');
+  title.textContent = id === 'screen-purchase-done' ? 'Receipt' : 'Your Order';
+  receiptIdEl.classList.toggle('hidden', id !== 'screen-purchase-done');
+
+  // The receipt screen's numbers come straight from the server's purchase
+  // response (set just before show() is called) — recomputing from `cart`
+  // here would show stale/cleared client state instead of what was charged.
+  if (id !== 'screen-purchase-done') {
+    receiptIdEl.textContent = '';
+    renderOrderSummary();
+  }
+}
+
+async function openStore(transactionId) {
+  storeTransactionId = transactionId;
+  cart = {};
+  appliedPromo = null;
+  show('screen-store');
+  const list = document.getElementById('store-catalog');
+  const errEl = document.getElementById('store-error');
+  errEl.textContent = '';
+  list.innerHTML = '<li>Loading…</li>';
+
+  try {
+    const res = await fetch(`/api/kiosk/store?transactionId=${encodeURIComponent(transactionId)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      list.innerHTML = '';
+      errEl.textContent = data.error || 'Verification not complete — access denied.';
+      return;
+    }
+
+    catalogById = {};
+    data.catalog.forEach((item) => { catalogById[item.id] = item; });
+
+    list.innerHTML = data.catalog
+      .map((item) => `
+      <li data-id="${item.id}">
+        <span class="product-icon">${item.emoji || '🛍️'}</span>
+        <span class="product-info">
+          <span class="product-name">${item.name}</span>
+          <span class="product-price">${item.price}</span>
+        </span>
+        <span class="qty-stepper">
+          <button type="button" class="qty-btn qty-minus" data-id="${item.id}" aria-label="Decrease quantity">−</button>
+          <span class="qty-value" id="qty-${item.id}">0</span>
+          <button type="button" class="qty-btn qty-plus" data-id="${item.id}" aria-label="Increase quantity">+</button>
+        </span>
+      </li>`)
+      .join('');
+
+    list.querySelectorAll('.qty-minus').forEach((btn) => {
+      btn.addEventListener('click', () => changeQty(btn.dataset.id, -1));
+    });
+    list.querySelectorAll('.qty-plus').forEach((btn) => {
+      btn.addEventListener('click', () => changeQty(btn.dataset.id, 1));
+    });
+
+    renderOrderSummary();
+  } catch {
+    list.innerHTML = '';
+    errEl.textContent = 'Could not reach the store. Try again.';
+  }
+}
+
+function changeQty(itemId, delta) {
+  const next = Math.max(0, (cart[itemId] || 0) + delta);
+  if (next === 0) delete cart[itemId];
+  else cart[itemId] = next;
+  const qtyEl = document.getElementById(`qty-${itemId}`);
+  if (qtyEl) qtyEl.textContent = String(next);
+  renderOrderSummary();
+}
+
+document.getElementById('btn-store-checkout').addEventListener('click', () => {
+  show('screen-checkout-details');
+});
+
+// ---------- Checkout details form ----------
+const PAYMENT_LABELS = { card: 'Credit / Debit Card', cash: 'Cash on Delivery' };
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+let customerDetails = null;
+
+const TEXT_FIELDS = [
+  'cd-first-name', 'cd-middle-name', 'cd-last-name', 'cd-email', 'cd-phone',
+  'cd-house-number', 'cd-street', 'cd-town', 'cd-state', 'cd-zip',
+];
+const CARD_FIELDS = ['cd-card-number', 'cd-card-expiry', 'cd-card-cvv'];
+const PROMO_FIELD = ['cd-promo'];
+
+function wireFloatingField(inputId, fieldId) {
+  const input = document.getElementById(inputId);
+  const field = document.getElementById(fieldId);
+  input.addEventListener('focus', () => field.classList.add('is-active'));
+  input.addEventListener('blur', () => {
+    field.classList.remove('is-active');
+    field.classList.toggle('is-filled', !!input.value);
+  });
+  input.addEventListener('input', () => field.classList.toggle('is-filled', !!input.value));
+}
+
+[...TEXT_FIELDS, ...CARD_FIELDS, ...PROMO_FIELD].forEach((id) => wireFloatingField(id, `${id}-field`));
+
+function setCheckoutFieldError(id, message) {
+  document.getElementById(`${id}-field`).classList.toggle('is-error', !!message);
+  document.getElementById(`${id}-error`).textContent = message;
+}
+
+// Show the card sub-form only when "card" is selected; Cash on Delivery needs
+// none of it.
+const cardDetailsEl = document.getElementById('cd-card-details');
+function updatePaymentMethodUI() {
+  const method = document.querySelector('input[name="cd-payment"]:checked')?.value || 'card';
+  cardDetailsEl.classList.toggle('hidden', method !== 'card');
+}
+document.querySelectorAll('input[name="cd-payment"]').forEach((r) => r.addEventListener('change', updatePaymentMethodUI));
+updatePaymentMethodUI();
+
+document.getElementById('btn-apply-promo').addEventListener('click', async () => {
+  const codeInput = document.getElementById('cd-promo');
+  const code = codeInput.value.trim().toUpperCase();
+  const errEl = document.getElementById('cd-promo-error');
+  const statusEl = document.getElementById('cd-promo-status');
+  errEl.textContent = '';
+  statusEl.textContent = '';
+  if (!code) {
+    appliedPromo = null;
+    return;
+  }
+  try {
+    const res = await fetch('/api/kiosk/promo/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.valid) {
+      appliedPromo = null;
+      errEl.textContent = data.error || 'Invalid promo code.';
+      return;
+    }
+    appliedPromo = { code: data.code, discountPercent: data.discountPercent };
+    statusEl.textContent = `Applied: ${data.discountPercent}% off.`;
+  } catch {
+    appliedPromo = null;
+    errEl.textContent = 'Could not validate code. Try again.';
+  }
+});
+
+function resetCheckoutDetailsForm() {
+  [...TEXT_FIELDS, ...CARD_FIELDS, ...PROMO_FIELD].forEach((id) => {
+    document.getElementById(id).value = '';
+    document.getElementById(`${id}-field`).classList.remove('is-active', 'is-filled', 'is-error');
+    document.getElementById(`${id}-error`).textContent = '';
+  });
+  document.getElementById('cd-promo-status').textContent = '';
+  const defaultPayment = document.querySelector('input[name="cd-payment"][value="card"]');
+  if (defaultPayment) defaultPayment.checked = true;
+  updatePaymentMethodUI();
+  customerDetails = null;
+}
+
+document.getElementById('btn-checkout-details-continue').addEventListener('click', () => {
+  const val = (id) => document.getElementById(id).value.trim();
+  const firstName = val('cd-first-name');
+  const middleName = val('cd-middle-name');
+  const lastName = val('cd-last-name');
+  const email = val('cd-email');
+  const phone = val('cd-phone');
+  const houseNumber = val('cd-house-number');
+  const street = val('cd-street');
+  const town = val('cd-town');
+  const state = val('cd-state');
+  const zip = val('cd-zip');
+  const paymentMethod = document.querySelector('input[name="cd-payment"]:checked')?.value || 'card';
+
+  let ok = true;
+  const require = (id, value, message) => {
+    if (!value) { setCheckoutFieldError(id, message); ok = false; } else setCheckoutFieldError(id, '');
+  };
+  require('cd-first-name', firstName, 'First name is required.');
+  setCheckoutFieldError('cd-middle-name', ''); // optional — never blocks submission
+  require('cd-last-name', lastName, 'Last name is required.');
+  if (!EMAIL_PATTERN.test(email)) { setCheckoutFieldError('cd-email', 'Enter a valid email.'); ok = false; } else setCheckoutFieldError('cd-email', '');
+  if (phone.replace(/\D/g, '').length < 7) { setCheckoutFieldError('cd-phone', 'Enter a valid phone number.'); ok = false; } else setCheckoutFieldError('cd-phone', '');
+  require('cd-house-number', houseNumber, 'Required.');
+  require('cd-street', street, 'Required.');
+  require('cd-town', town, 'Required.');
+  require('cd-state', state, 'Required.');
+  require('cd-zip', zip, 'Required.');
+
+  let card = null;
+  if (paymentMethod === 'card') {
+    const cardNumberDigits = val('cd-card-number').replace(/\D/g, '');
+    const expiry = val('cd-card-expiry');
+    const cvv = val('cd-card-cvv');
+
+    if (cardNumberDigits.length < 13 || cardNumberDigits.length > 19) {
+      setCheckoutFieldError('cd-card-number', 'Enter a valid card number.'); ok = false;
+    } else setCheckoutFieldError('cd-card-number', '');
+
+    const expiryMatch = /^(\d{2})\/(\d{2})$/.exec(expiry);
+    let expiryOk = !!expiryMatch;
+    if (expiryMatch) {
+      const mm = Number(expiryMatch[1]);
+      const yy = Number(expiryMatch[2]);
+      const expiryDate = new Date(2000 + yy, mm); // first of the month *after* expiry
+      expiryOk = mm >= 1 && mm <= 12 && expiryDate > new Date();
+    }
+    if (!expiryOk) { setCheckoutFieldError('cd-card-expiry', 'Enter a valid, unexpired MM/YY.'); ok = false; } else setCheckoutFieldError('cd-card-expiry', '');
+
+    if (!/^\d{3,4}$/.test(cvv)) { setCheckoutFieldError('cd-card-cvv', 'Enter a valid CVV.'); ok = false; } else setCheckoutFieldError('cd-card-cvv', '');
+
+    // Only the last 4 digits + expiry are kept — the full card number and
+    // CVV are validated here for the demo UI and then discarded; they're
+    // never sent to the server, logged, or stored anywhere.
+    if (ok) card = { last4: cardNumberDigits.slice(-4), expiry };
+  }
+  if (!ok) return;
+
+  customerDetails = {
+    firstName, middleName, lastName, email, phone,
+    address: { houseNumber, street, town, state, zip },
+    paymentMethod, card,
+  };
+  openCheckoutReview();
+});
+
+// ---------- Checkout review + purchase ----------
+function openCheckoutReview() {
+  const summary = document.getElementById('checkout-details-summary');
+  const fullName = [customerDetails.firstName, customerDetails.middleName, customerDetails.lastName].filter(Boolean).join(' ');
+  const { houseNumber, street, town, state, zip } = customerDetails.address;
+  const paymentLine = customerDetails.paymentMethod === 'card'
+    ? `Payment: ${PAYMENT_LABELS.card} ending in ${customerDetails.card.last4}`
+    : `Payment: ${PAYMENT_LABELS.cash}`;
+
+  summary.innerHTML = `
+    <strong>${fullName}</strong><br />
+    ${customerDetails.email} · ${customerDetails.phone}<br />
+    ${houseNumber} ${street}, ${town}, ${state} ${zip}<br />
+    ${paymentLine}`;
+
+  document.getElementById('checkout-error').textContent = '';
+  show('screen-checkout');
+}
+
+document.getElementById('btn-checkout-confirm').addEventListener('click', completePurchase);
+
+async function completePurchase() {
+  const errEl = document.getElementById('checkout-error');
+  errEl.textContent = '';
+  const items = Object.entries(cart).map(([itemId, quantity]) => ({ itemId, quantity }));
+  if (!items.length) {
+    errEl.textContent = 'Your cart is empty.';
+    return;
+  }
+  try {
+    const res = await fetch('/api/kiosk/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transactionId: storeTransactionId,
+        items,
+        customer: customerDetails,
+        promoCode: appliedPromo?.code || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Purchase failed — access denied.';
+      return;
+    }
+
+    const paidVia = data.customer.paymentMethod === 'card'
+      ? `${PAYMENT_LABELS.card} ending in ${data.customer.cardLast4}`
+      : PAYMENT_LABELS.cash;
+    document.getElementById('purchase-receipt-customer').textContent = `${data.customer.name} — paid via ${paidVia}`;
+
+    // Populate the shared order panel directly from the server's authoritative
+    // numbers — this happens *before* show(), which will skip re-rendering
+    // from (now-stale) cart state once it sees screen-purchase-done.
+    document.getElementById('shop-order-lines').innerHTML = data.items
+      .map((line) => `<li><span>${line.name} × ${line.quantity}</span><span>${line.lineTotal}</span></li>`)
+      .join('');
+    document.getElementById('shop-order-subtotal').textContent = `Subtotal: ${data.subtotal}`;
+    document.getElementById('shop-order-discount').textContent = data.discountPercent
+      ? `Promo (-${data.discountPercent}%): -${data.discount}`
+      : '';
+    document.getElementById('shop-order-total').textContent = `Total: ${data.total}`;
+    document.getElementById('shop-order-receipt-id').textContent = `Receipt ${data.receiptId}`;
+
+    show('screen-purchase-done');
+  } catch {
+    errEl.textContent = 'Could not complete purchase. Try again.';
+  }
+}
+
+document.getElementById('btn-purchase-done').addEventListener('click', () => show('screen-welcome'));
 
 // ---------- Staff panel (PIN-gated) ----------
 // Uses sessionStorage, not localStorage: sessionStorage is wiped when the
