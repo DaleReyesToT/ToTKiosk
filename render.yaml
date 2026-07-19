@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: tot-kiosk-demo
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: TOT_API_KEY
+        sync: false
+      - key: TOT_SECRET_KEY
+        sync: false
+      - key: TOT_APP_DOMAIN
+        sync: false
+      - key: TOT_API_BASE_URL
+        value: https://qa.tokenoftrust.com/api
+      - key: TOT_RETURN_URL
+        sync: false
+      - key: STAFF_PIN
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://tot-kiosk-demo.onrender.com
