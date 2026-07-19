@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: tot-kiosk-demo
+    name: xtot-kiosk-demo
     runtime: node
     plan: free
     buildCommand: npm install
@@ -19,4 +19,4 @@ services:
       - key: STAFF_PIN
         sync: false
       - key: PUBLIC_BASE_URL
-        value: https://tot-kiosk-demo.onrender.com
+        value: https://xtot-kiosk-demo.onrender.com
