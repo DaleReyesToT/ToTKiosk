@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kiosk Age Verification</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+   <div class="stage">
+
+    <header class="brand-header">
+      <img src="assets/tot-logo.svg" alt="Token of Trust" class="brand-logo" id="brand-logo" />
+    </header>
+
+    <div class="progress-dots" id="progress-dots">
+      <span class="dot" data-step="1"></span>
+      <span class="dot" data-step="2"></span>
+      <span class="dot" data-step="3"></span>
+      <span class="dot" data-step="4"></span>
+    </div>
+
+    <section id="screen-welcome" class="screen active" data-step="1">
+      <h1>Verify Your Age</h1>
+      <p class="assurance">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" />
+          <path d="M9.5 12l1.8 1.8L15 10.2" />
+        </svg>
+        <span>Verification happens on your own phone — this kiosk never sees your ID.</span>
+      </p>
+      <div class="stack">
+        <button id="btn-start-sms" class="primary">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+            <path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+            <line x1="7" y1="8" x2="17" y2="8" stroke-linecap="round" />
+            <line x1="7" y1="12" x2="14" y2="12" stroke-linecap="round" />
+          </svg>
+          Text me a verification link
+        </button>
+        <button id="btn-start-qr" class="primary">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="3" height="3" />
+            <rect x="18" y="14" width="3" height="3" />
+            <rect x="14" y="18" width="3" height="3" />
+            <rect x="18" y="18" width="3" height="3" />
+          </svg>
+          Show me a QR code
+        </button>
+      </div>
+      <button id="btn-have-code" class="link">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="7" cy="14" r="3.2" />
+          <path d="M9.3 11.7 18 3l2 2-1.6 1.6M16 5l2 2" />
+        </svg>
+        I already have a verification code
+      </button>
+      <p class="live-counter" id="live-counter" aria-live="polite"></p>
+    </section>
+
+    <section id="screen-phone" class="screen" data-step="2">
+      <h2>Enter your phone number</h2>
+      <p class="lede">We'll text you a one-time verification link.</p>
+      <div class="phone-display">
+        <span class="phone-prefix">+1</span>
+        <span id="phone-value" class="phone-value" data-placeholder="555 123 4567"></span>
+        <span class="cursor"></span>
+      </div>
+      <div class="field" id="field-name">
+        <input id="input-name" class="field-input" type="text" autocomplete="given-name" />
+        <label class="field-label" for="input-name">First name (optional)</label>
+        <p class="field-error" id="field-name-error"></p>
+      </div>
+      <div class="keypad" id="keypad-phone">
+        <button type="button" data-key="1">1</button>
+        <button type="button" data-key="2">2</button>
+        <button type="button" data-key="3">3</button>
+        <button type="button" data-key="4">4</button>
+        <button type="button" data-key="5">5</button>
+        <button type="button" data-key="6">6</button>
+        <button type="button" data-key="7">7</button>
+        <button type="button" data-key="8">8</button>
+        <button type="button" data-key="9">9</button>
+        <button type="button" class="keypad-clear" data-key="clear">Clear</button>
+        <button type="button" data-key="0">0</button>
+        <button type="button" class="keypad-back" data-key="back">⌫</button>
+      </div>
+      <button id="btn-send-sms" class="primary" disabled>Send verification link</button>
+      <button class="link btn-back" data-target="screen-welcome">Back</button>
+    </section>
+
+    <section id="screen-qr" class="screen" data-step="3">
+      <h2>Scan to verify</h2>
+      <div id="qr-canvas" class="qr-box"><p>Loading…</p></div>
+      <div class="countdown-track">
+        <div class="countdown-fill" id="qr-countdown-fill"></div>
+      </div>
+      <p class="lede small" id="qr-countdown-label">Code expires in 5:00</p>
+      <p class="lede">Scan with your phone camera, then come back with your code.</p>
+      <p class="watching" id="qr-watching">Watching for your verification…</p>
+      <button class="link btn-back" data-target="screen-welcome">Back</button>
+    </section>
+
+    <section id="screen-sent" class="screen" data-step="3">
+      <h2>Check your phone</h2>
+      <p class="lede">
+        We sent a verification link. Finish it at your own pace — this kiosk
+        is free for the next customer right now.
+      </p>
+      <div class="watching-box">
+        <span class="spinner"></span>
+        <span id="sent-elapsed">Watching for your verification… 0:00</span>
+      </div>
+      <div class="stack">
+        <button id="btn-sent-done" class="secondary">Enter my code manually instead</button>
+        <button id="btn-sent-idle" class="secondary">Done — let someone else use the kiosk</button>
+      </div>
+    </section>
+
+    <section id="screen-code" class="screen" data-step="3">
+      <h2>Enter your verification code</h2>
+      <p class="lede">The 6-character code shown at the end of your phone verification.</p>
+      <div class="otp-row" id="otp-row">
+        <input class="otp-box" maxlength="1" data-idx="0" />
+        <input class="otp-box" maxlength="1" data-idx="1" />
+        <input class="otp-box" maxlength="1" data-idx="2" />
+        <input class="otp-box" maxlength="1" data-idx="3" />
+        <input class="otp-box" maxlength="1" data-idx="4" />
+        <input class="otp-box" maxlength="1" data-idx="5" />
+      </div>
+      <button id="btn-check-code" class="primary" disabled>Check status</button>
+      <button class="link btn-back" data-target="screen-welcome">Back</button>
+    </section>
+
+    <section id="screen-result" class="screen" data-step="4">
+      <div id="result-icon" class="result-icon"></div>
+      <h2 id="result-title"></h2>
+      <p id="result-message" class="lede"></p>
+      <button id="btn-result-done" class="primary">Done — next customer</button>
+      <p class="lede small" id="result-auto-note"></p>
+    </section>
+
+   </div>
+
+    <button id="btn-staff-toggle" class="staff-link">Staff view</button>
+
+    <div id="staff-pin-modal" class="staff-panel hidden">
+      <h3>Staff PIN required</h3>
+      <p class="lede small">Enter the staff PIN to view session data. Once unlocked, you won't need to do this again for 4 hours.</p>
+      <div class="otp-row">
+        <input class="otp-box pin-box" maxlength="1" data-idx="0" inputmode="numeric" />
+        <input class="otp-box pin-box" maxlength="1" data-idx="1" inputmode="numeric" />
+        <input class="otp-box pin-box" maxlength="1" data-idx="2" inputmode="numeric" />
+        <input class="otp-box pin-box" maxlength="1" data-idx="3" inputmode="numeric" />
+      </div>
+      <p class="field-error" id="staff-pin-error"></p>
+      <button id="btn-staff-pin-submit" class="primary" disabled>Unlock</button>
+      <button id="btn-staff-pin-cancel" class="link">Cancel</button>
+    </div>
+
+    <div id="staff-panel" class="staff-panel hidden">
+      <h3>Recent sessions</h3>
+      <p class="lede small">Each row is an independent customer — none of them block the others.</p>
+      <button id="btn-staff-refresh" class="secondary small">Refresh</button>
+      <ul id="staff-list"></ul>
+      <button id="btn-staff-close" class="link">Close</button>
+    </div>
+
+    <div class="trust-badge">
+      <img src="assets/tot-seal.svg" alt="" />
+      <span>Verified by Token of Trust</span>
+    </div>
+
+    <div id="attract-screen" class="attract-screen hidden">
+      <img src="assets/tot-logo.svg" alt="Token of Trust" class="attract-logo" />
+      <h1 class="attract-pulse">Tap to Verify Your Age</h1>
+      <p>Fast, private age verification — right on your own phone.</p>
+    </div>
+
+  </div>
+  <script src="kiosk.js"></script>
+</body>
+</html>
