@@ -24,16 +24,19 @@ if (!TOT_API_KEY || !TOT_SECRET_KEY || !TOT_APP_DOMAIN) {
   console.warn('Missing TOT_API_KEY / TOT_SECRET_KEY / TOT_APP_DOMAIN in .env — API calls will fail.');
 }
 
-// DEV-ONLY escape hatch: lets a local developer force a transaction to
-// "cleared" without a real Token of Trust verification, for exercising the
-// store/purchase gate when the hosted verification flow itself is unusable
-// (e.g. sandbox outage). Off unless explicitly enabled — NEVER set this on a
-// real deployment, since it lets anyone skip the actual age/identity gate.
+// DEV-ONLY escape hatch: lets a local developer mark a transaction "cleared"
+// for exercising the store/purchase gate when the hosted verification flow
+// itself is unusable (e.g. sandbox outage), without waiting on a real
+// customer to complete it. This calls Token of Trust's own sandbox-only
+// diagnostic endpoint (POST /diagnostic/evaluate, simulateClearedVerification)
+// rather than faking anything in our own code — the transaction really is
+// cleared in their system, so it exercises the exact same status-check path
+// a real verification would. Off unless explicitly enabled — NEVER set this
+// on a real deployment, since it lets anyone skip the actual age/identity gate.
 const devMockVerificationEnabled = DEV_ALLOW_MOCK_VERIFICATION === 'true';
 if (devMockVerificationEnabled) {
   console.warn('DEV_ALLOW_MOCK_VERIFICATION is enabled — verification can be faked via /api/kiosk/dev/force-clear. Do not enable this in production.');
 }
-const devForcedCleared = new Set();
 
 if (!/^\d{4}$/.test(STAFF_PIN)) {
   console.warn('STAFF_PIN is not exactly 4 digits — the staff view will be unreachable until it is fixed in .env.');
@@ -113,20 +116,22 @@ function notifySubscribers(transactionId, status) {
   }
 }
 
+// GET /person returns each gate as an object ({ value: "fullMatch", dependsOn:
+// [...] }); POST /person returns the same gate as a plain string. A bare
+// `=== 'fullMatch'` only ever matches the POST shape — against a GET response
+// (which is all this kiosk ever calls) it's always false, so a genuinely
+// cleared verification would silently look "pending" forever. This unwraps
+// both shapes, matching Token of Trust's own recommended check.
+function isPositiveGate(g) {
+  return g === true || g === 'fullMatch' || g === 'partialMatch' ||
+    !!(g && (g.value === true || g.value === 'fullMatch' || g.value === 'partialMatch'));
+}
+
 // Token of Trust doesn't document the webhook payload shape, so it's treated
 // purely as a "something changed, go check" ping — the actual gates always
 // come from this authoritative GET /person lookup, both here and when the
 // kiosk polls directly.
 async function checkAndRecordStatus({ code, transactionId }) {
-  // DEV-ONLY: a transaction forced via /api/kiosk/dev/force-clear short-
-  // circuits straight to "cleared" — no real Token of Trust lookup happens
-  // for it. Every other transaction is unaffected and still goes through the
-  // real check below.
-  if (devMockVerificationEnabled && transactionId && devForcedCleared.has(transactionId)) {
-    updateSessionStatus(transactionId, 'cleared');
-    return { status: 'cleared', raw: { dev: 'mocked' }, resolvedTransactionId: transactionId };
-  }
-
   const params = new URLSearchParams({
     totApiKey: TOT_API_KEY,
     totSecretKey: TOT_SECRET_KEY,
@@ -137,14 +142,19 @@ async function checkAndRecordStatus({ code, transactionId }) {
 
   const totRes = await fetch(`${TOT_API_BASE_URL}/person?${params.toString()}`);
   const data = await totRes.json();
-  const report = data?.transaction?.report;
+  // Every field this API returns lives under `content` (confirmed against the
+  // live API — `content.transaction.report`), not at the top level. Missing
+  // that `.content` here meant `report` was always undefined via optional
+  // chaining, so every real check silently fell through to 'not_found'
+  // regardless of the actual status underneath.
+  const report = data?.content?.transaction?.report;
 
   let status = 'not_found';
   if (report) {
     const gates = report.gates || {};
-    if (gates.isCleared === 'fullMatch') status = 'cleared';
-    else if (gates.isRejected === 'fullMatch') status = 'rejected';
-    else if (gates.isSubmitted === 'fullMatch') status = 'pending_review';
+    if (isPositiveGate(gates.isCleared)) status = 'cleared';
+    else if (isPositiveGate(gates.isRejected)) status = 'rejected';
+    else if (isPositiveGate(gates.isSubmitted)) status = 'pending_review';
     else status = 'pending';
   }
 
@@ -513,17 +523,42 @@ app.get('/api/kiosk/dev/config', (req, res) => {
   res.json({ mockVerificationEnabled: devMockVerificationEnabled });
 });
 
-// DEV-ONLY. Marks a transaction as "cleared" without any real verification.
-// Disabled (404) unless DEV_ALLOW_MOCK_VERIFICATION=true — never enable that
-// on a real deployment, since this would let anyone skip the actual gate.
-app.post('/api/kiosk/dev/force-clear', (req, res) => {
+// DEV-ONLY. Marks a transaction "cleared" via Token of Trust's own
+// sandbox-only diagnostic endpoint (real API call, real transaction state —
+// not a shortcut faked in our own code), then re-checks status through the
+// normal, real GET /person path so the rest of the app never has to know the
+// difference. Disabled (404) unless DEV_ALLOW_MOCK_VERIFICATION=true — never
+// enable that on a real deployment, since this would let anyone skip the
+// actual gate. Also 403s in production per the sandbox's own guard: this
+// works on qa/test hosts but is blocked on sandbox.tokenoftrust.com.
+app.post('/api/kiosk/dev/force-clear', async (req, res) => {
   if (!devMockVerificationEnabled) return res.status(404).end();
   const { transactionId } = req.body || {};
   if (!transactionId) return res.status(422).json({ error: 'transactionId is required' });
-  devForcedCleared.add(transactionId);
-  updateSessionStatus(transactionId, 'cleared');
-  notifySubscribers(transactionId, 'cleared');
-  res.json({ ok: true });
+
+  try {
+    const diagRes = await fetch(`${TOT_API_BASE_URL}/diagnostic/evaluate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        totApiKey: TOT_API_KEY,
+        totSecretKey: TOT_SECRET_KEY,
+        appDomain: TOT_APP_DOMAIN,
+        functionName: 'simulateClearedVerification',
+        params: { appTransactionId: transactionId },
+      }),
+    });
+    const diagData = await diagRes.json();
+    if (!diagRes.ok || !diagData?.content?.cleared) {
+      return res.status(502).json({ error: 'Token of Trust sandbox diagnostic call failed', raw: diagData });
+    }
+
+    const { status } = await checkAndRecordStatus({ transactionId });
+    notifySubscribers(transactionId, status);
+    res.json({ ok: true, status });
+  } catch (err) {
+    res.status(502).json({ error: 'Could not reach Token of Trust', detail: String(err) });
+  }
 });
 
 app.listen(PORT, () => {
