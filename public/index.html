@@ -60,6 +60,29 @@
         I already have a verification code
       </button>
       <p class="live-counter" id="live-counter" aria-live="polite"></p>
+      <a id="link-demo-verify" class="link demo-verify-link hidden" href="demo-verify.html" target="_blank" rel="noopener">Demo: preview the verification flow</a>
+    </section>
+
+    <section id="screen-qr-contact" class="screen" data-step="2">
+      <h2>Where should we send your code?</h2>
+      <p class="lede">If verification needs to confirm it's you, we'll use this — never anything else.</p>
+      <div class="payment-methods">
+        <label class="payment-option">
+          <input type="radio" name="qr-contact-method" value="email" checked />
+          Email
+        </label>
+        <label class="payment-option">
+          <input type="radio" name="qr-contact-method" value="sms" />
+          Phone (SMS)
+        </label>
+      </div>
+      <div class="field" id="qr-contact-field">
+        <input id="qr-contact-value" class="field-input" type="email" autocomplete="email" />
+        <label class="field-label" id="qr-contact-label" for="qr-contact-value">Email</label>
+        <p class="field-error" id="qr-contact-error"></p>
+      </div>
+      <button id="btn-qr-contact-continue" class="primary">Continue</button>
+      <button class="link btn-back" data-target="screen-welcome">Back</button>
     </section>
 
     <section id="screen-phone" class="screen" data-step="2">
@@ -116,7 +139,8 @@
         <span id="sent-elapsed">Watching for your verification… 0:00</span>
       </div>
       <p class="field-error" id="sent-dev-note"></p>
-      <button id="btn-dev-force-clear-sms" class="link hidden">Dev: simulate verified</button>
+      <a id="link-demo-verify-sms" class="link demo-verify-link hidden" href="#" target="_blank" rel="noopener">Dev: open the verification link (as if texted)</a>
+      <button id="btn-dev-force-clear-sms" class="link hidden">Dev: skip straight to verified</button>
       <div class="stack">
         <button id="btn-sent-done" class="secondary">Enter my code manually instead</button>
         <button id="btn-sent-idle" class="secondary">Done — let someone else use the kiosk</button>

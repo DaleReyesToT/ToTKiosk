@@ -30,8 +30,9 @@ function show(id) {
   if (id === 'screen-welcome') {
     startLiveCounter();
     // Shared-device privacy: never leave one customer's name/email/phone/
-    // address/card details sitting in the form for the next person to see.
+    // address/card details sitting in a form for the next person to see.
     resetCheckoutDetailsForm();
+    resetQrContactForm();
     cart = {};
     appliedPromo = null;
   } else {
@@ -49,11 +50,15 @@ document.querySelectorAll('.btn-back').forEach((b) => {
 // ---------- Idle auto-reset ----------
 // Kiosks can't afford a customer wandering off mid-flow and blocking the
 // device for the next person, so any non-welcome/result screen resets itself.
+// DISABLED FOR NOW at the user's request (was interrupting manual testing) —
+// re-enable for real kiosk deployment by restoring the setTimeout below.
 let idleTimer = null;
 const IDLE_MS = 45000;
+const IDLE_RESET_ENABLED = false;
 
 function startIdleTimer() {
   stopIdleTimer();
+  if (!IDLE_RESET_ENABLED) return;
   idleTimer = setTimeout(() => {
     stopPolling();
     show('screen-welcome');
@@ -69,12 +74,16 @@ function stopIdleTimer() {
 // Draws customers in with an eye-catching full-screen prompt after a longer
 // stretch of nobody touching the kiosk at all (separate from the shorter
 // per-screen idle-reset above, which only fires mid-flow).
+// DISABLED FOR NOW at the user's request (was interrupting manual testing) —
+// re-enable for real kiosk deployment by restoring the setTimeout below.
 const attractScreen = document.getElementById('attract-screen');
 const ATTRACT_IDLE_MS = 3 * 60 * 1000;
+const ATTRACT_SCREEN_ENABLED = false;
 let attractTimer = null;
 
 function startAttractTimer() {
   clearTimeout(attractTimer);
+  if (!ATTRACT_SCREEN_ENABLED) return;
   attractTimer = setTimeout(showAttractScreen, ATTRACT_IDLE_MS);
 }
 
@@ -230,6 +239,7 @@ function setDevForceClearVisible(visible) {
   const show = visible && devModeEnabled;
   document.getElementById('btn-dev-force-clear-qr').classList.toggle('hidden', !show);
   document.getElementById('btn-dev-force-clear-sms').classList.toggle('hidden', !show);
+  document.getElementById('link-demo-verify-sms').classList.toggle('hidden', !show);
 }
 
 async function forceClearDev() {
@@ -248,15 +258,82 @@ async function forceClearDev() {
 document.getElementById('btn-dev-force-clear-qr').addEventListener('click', forceClearDev);
 document.getElementById('btn-dev-force-clear-sms').addEventListener('click', forceClearDev);
 
+// Same full demo flow the QR code already opens when scanned (choose contact
+// method, enter the code, upload an ID, land in the store) — SMS mode has no
+// QR to embed that link in, so this stands in for "the link that was texted".
+document.getElementById('link-demo-verify-sms').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!currentPollingTransactionId) return;
+  window.open(`demo-verify.html?transactionId=${encodeURIComponent(currentPollingTransactionId)}`, '_blank');
+});
+
 fetch('/api/kiosk/dev/config')
   .then((res) => res.json())
-  .then((data) => { devModeEnabled = !!data.mockVerificationEnabled; })
+  .then((data) => {
+    devModeEnabled = !!data.mockVerificationEnabled;
+    document.getElementById('link-demo-verify').classList.toggle('hidden', !devModeEnabled);
+  })
   .catch(() => {});
 
 // ---------- Welcome screen ----------
 document.getElementById('btn-start-sms').addEventListener('click', () => show('screen-phone'));
 document.getElementById('btn-have-code').addEventListener('click', () => show('screen-code'));
-document.getElementById('btn-start-qr').addEventListener('click', startQr);
+document.getElementById('btn-start-qr').addEventListener('click', () => show('screen-qr-contact'));
+
+// ---------- QR contact-method collection ----------
+// Token of Trust's sandbox requires a real, non-empty invitee even for a
+// QR/urlOnly invite, and its hosted page's confirmation-code step is locked
+// to whatever address that is — so it has to be the actual customer's own
+// email/phone, never a placeholder someone else controls.
+const QR_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const qrContactField = document.getElementById('qr-contact-field');
+const qrContactInput = document.getElementById('qr-contact-value');
+const qrContactLabel = document.getElementById('qr-contact-label');
+const qrContactError = document.getElementById('qr-contact-error');
+
+function updateQrContactMethodUI() {
+  const method = document.querySelector('input[name="qr-contact-method"]:checked')?.value || 'email';
+  qrContactInput.setAttribute('type', method === 'email' ? 'email' : 'tel');
+  qrContactLabel.textContent = method === 'email' ? 'Email' : 'Phone number';
+  qrContactError.textContent = '';
+}
+document.querySelectorAll('input[name="qr-contact-method"]').forEach((r) => r.addEventListener('change', updateQrContactMethodUI));
+updateQrContactMethodUI();
+
+function resetQrContactForm() {
+  qrContactInput.value = '';
+  qrContactField.classList.remove('is-active', 'is-filled', 'is-error');
+  qrContactError.textContent = '';
+  const defaultMethod = document.querySelector('input[name="qr-contact-method"][value="email"]');
+  if (defaultMethod) defaultMethod.checked = true;
+  updateQrContactMethodUI();
+}
+
+qrContactInput.addEventListener('focus', () => qrContactField.classList.add('is-active'));
+qrContactInput.addEventListener('blur', () => {
+  qrContactField.classList.remove('is-active');
+  qrContactField.classList.toggle('is-filled', !!qrContactInput.value);
+});
+qrContactInput.addEventListener('input', () => qrContactField.classList.toggle('is-filled', !!qrContactInput.value));
+
+document.getElementById('btn-qr-contact-continue').addEventListener('click', () => {
+  const method = document.querySelector('input[name="qr-contact-method"]:checked')?.value || 'email';
+  const value = qrContactInput.value.trim();
+  if (method === 'email') {
+    if (!QR_EMAIL_PATTERN.test(value)) {
+      qrContactError.textContent = 'Enter a valid email.';
+      qrContactField.classList.add('is-error');
+      return;
+    }
+  } else if (value.replace(/\D/g, '').length < 7) {
+    qrContactError.textContent = 'Enter a valid phone number.';
+    qrContactField.classList.add('is-error');
+    return;
+  }
+  qrContactError.textContent = '';
+  qrContactField.classList.remove('is-error');
+  startQr(method, value);
+});
 
 // ---------- Floating-label name field ----------
 const nameField = document.getElementById('field-name');
@@ -371,7 +448,7 @@ document.getElementById('btn-sent-idle').addEventListener('click', () => {
 // ---------- QR flow ----------
 let qrCountdownInterval = null;
 
-async function startQr() {
+async function startQr(contactMethod, contactValue) {
   show('screen-qr');
   const box = document.getElementById('qr-canvas');
   box.innerHTML = '<p>Loading…</p>';
@@ -379,7 +456,7 @@ async function startQr() {
     const res = await fetch('/api/kiosk/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'qr' }),
+      body: JSON.stringify({ mode: 'qr', contactMethod, contactValue }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to create QR invite');
@@ -483,6 +560,9 @@ const RESULT_COPY = {
 
 let resultAutoResetTimer = null;
 let lastTransactionId = null;
+// DISABLED FOR NOW at the user's request (was interrupting manual testing) —
+// re-enable for real kiosk deployment by setting this back to true.
+const RESULT_AUTO_RESET_ENABLED = false;
 
 function showResult(status, transactionId) {
   stopPolling();
@@ -506,8 +586,12 @@ function showResult(status, transactionId) {
   show('screen-result');
 
   const noteEl = document.getElementById('result-auto-note');
-  let secs = canContinue ? 20 : 8;
   if (resultAutoResetTimer) clearInterval(resultAutoResetTimer);
+  if (!RESULT_AUTO_RESET_ENABLED) {
+    noteEl.textContent = '';
+    return;
+  }
+  let secs = canContinue ? 20 : 8;
   const tick = () => {
     noteEl.textContent = `Returning to start in ${secs}s…`;
     if (secs <= 0) {
@@ -1068,4 +1152,14 @@ async function refreshStaff() {
 }
 
 // ---------- Initial state ----------
-show('screen-welcome');
+// If we were sent here from the demo verification page (?transactionId=...),
+// go straight to the store instead of the welcome screen — openStore() still
+// does its own live server-side gate check, so this is just a shortcut to
+// get there, not a way to skip the actual verification requirement.
+const initialParams = new URLSearchParams(window.location.search);
+const initialTransactionId = initialParams.get('transactionId');
+if (initialTransactionId && initialParams.get('openStore')) {
+  openStore(initialTransactionId);
+} else {
+  show('screen-welcome');
+}

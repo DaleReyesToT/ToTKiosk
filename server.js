@@ -155,8 +155,28 @@ async function checkAndRecordStatus({ code, transactionId }) {
 }
 
 app.post('/api/kiosk/invite', async (req, res) => {
-  const { phoneNumber, givenName, mode } = req.body || {};
+  const { phoneNumber, givenName, mode, contactMethod, contactValue } = req.body || {};
   const appTransactionId = `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  // DEV-ONLY: route the QR flow to our own demo verification page instead of
+  // Token of Trust's real hosted flow — a self-contained fake (choose
+  // contact method, enter a code shown right on the page, "upload" an ID),
+  // not a bypass of anything real. This is what lets the full "scan QR ->
+  // verify -> upload an ID" shape be demoed when the real hosted flow can't
+  // be completed. Only reachable when the server was started with
+  // DEV_ALLOW_MOCK_VERIFICATION=true; production keeps the real flow below.
+  if (mode === 'qr' && devMockVerificationEnabled) {
+    logSession({
+      appTransactionId,
+      mode: 'qr',
+      phoneLast4: null,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    });
+    const demoUrl = `${publicBaseUrl}/demo-verify.html?transactionId=${encodeURIComponent(appTransactionId)}`;
+    const qrDataUrl = await QRCode.toDataURL(demoUrl, { margin: 1, width: 320 });
+    return res.json({ appTransactionId, qrDataUrl, ttlSeconds: 300 });
+  }
 
   const inviteOptions = {
     type: 'getVerified',
@@ -174,10 +194,17 @@ app.post('/api/kiosk/invite', async (req, res) => {
     inviteOptions.urlOnly = true;
     inviteOptions.ttl = { inMinutes: 5 };
     // The sandbox schema requires a non-empty `invitee` even when urlOnly is
-    // true. The hosted verification page's OTP-confirmation step is locked to
-    // this address, so it has to be a real, reachable inbox — not a
-    // placeholder — or the flow can never be completed.
-    inviteOptions.invitee = { email: 'dale.reyes@team.tokenoftrust.com' };
+    // true, and the hosted verification page's confirmation-code step is
+    // locked to this exact address — so it must be the actual customer's own
+    // email/phone (collected on screen-qr-contact before we get here), never
+    // an address we control, or they'd have no way to receive that code.
+    if (contactMethod === 'sms') {
+      if (!contactValue) return res.status(422).json({ error: 'contactValue (phone) is required for QR mode' });
+      inviteOptions.invitee = { phoneNumber: contactValue };
+    } else {
+      if (!contactValue) return res.status(422).json({ error: 'contactValue (email) is required for QR mode' });
+      inviteOptions.invitee = { email: contactValue };
+    }
   } else {
     if (!phoneNumber) {
       return res.status(422).json({ error: 'phoneNumber is required for SMS mode' });

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Demo: Verification Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+   <div class="stage">
+
+    <header class="brand-header">
+      <img src="assets/tot-logo.svg" alt="Token of Trust" class="brand-logo" id="brand-logo" />
+    </header>
+
+    <div class="demo-banner">
+      Demo only — not connected to Token of Trust. Nothing here is a real
+      identity check; it exists to show the shape of the flow.
+    </div>
+
+    <div class="progress-dots" id="progress-dots">
+      <span class="dot" data-step="1"></span>
+      <span class="dot" data-step="2"></span>
+      <span class="dot" data-step="3"></span>
+      <span class="dot" data-step="4"></span>
+    </div>
+
+    <section id="screen-contact-choice" class="screen active" data-step="1">
+      <h1>Verify it's you</h1>
+      <p class="lede">Where should we send your verification code?</p>
+      <div class="stack">
+        <button id="btn-choose-sms" class="primary">Text me a code</button>
+        <button id="btn-choose-email" class="primary">Email me a code</button>
+      </div>
+    </section>
+
+    <section id="screen-contact-input" class="screen" data-step="1">
+      <h2 id="contact-input-title">Where should we send it?</h2>
+      <div class="field" id="contact-field">
+        <input id="contact-input" class="field-input" type="text" autocomplete="off" />
+        <label class="field-label" id="contact-input-label" for="contact-input">Phone number</label>
+        <p class="field-error" id="contact-input-error"></p>
+      </div>
+      <div class="stack">
+        <button id="btn-send-code" class="primary">Send code</button>
+        <button class="link btn-back" data-target="screen-contact-choice">Back</button>
+      </div>
+    </section>
+
+    <section id="screen-code" class="screen" data-step="2">
+      <h2>Enter your code</h2>
+      <p class="lede" id="code-sent-note"></p>
+      <div class="otp-row" id="otp-row">
+        <input class="otp-box" maxlength="1" data-idx="0" />
+        <input class="otp-box" maxlength="1" data-idx="1" />
+        <input class="otp-box" maxlength="1" data-idx="2" />
+        <input class="otp-box" maxlength="1" data-idx="3" />
+        <input class="otp-box" maxlength="1" data-idx="4" />
+        <input class="otp-box" maxlength="1" data-idx="5" />
+      </div>
+      <p class="field-error" id="code-error"></p>
+      <button id="btn-code-continue" class="primary" disabled>Continue</button>
+    </section>
+
+    <section id="screen-upload-id" class="screen" data-step="3">
+      <h2>Upload a photo of your ID</h2>
+      <p class="lede small">Front of a government-issued ID.</p>
+      <div class="camera-box" id="id-preview-box">
+        <p class="id-upload-placeholder" id="id-upload-placeholder">No photo selected yet</p>
+        <img id="id-photo" class="hidden" alt="Selected ID photo" />
+      </div>
+      <input id="id-file-input" type="file" accept="image/*" capture="environment" class="hidden" />
+      <p class="field-error" id="id-upload-error"></p>
+      <div class="stack">
+        <button id="btn-choose-id-photo" class="secondary">Choose photo</button>
+        <button id="btn-id-submit" class="primary" disabled>Submit ID</button>
+      </div>
+    </section>
+
+    <section id="screen-processing" class="screen" data-step="4">
+      <div class="spinner-large"></div>
+      <h2>Reviewing…</h2>
+      <p class="lede">This is where a real submission would be checked.</p>
+    </section>
+
+    <section id="screen-done" class="screen" data-step="4">
+      <div class="result-icon good">
+        <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>
+      </div>
+      <h2>Verified</h2>
+      <p class="lede" id="done-message">You're all set — head back to the kiosk.</p>
+      <button id="btn-restart" class="secondary">Start over</button>
+    </section>
+
+   </div>
+  </div>
+  <script src="demo-verify.js"></script>
+</body>
+</html>
